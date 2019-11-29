@@ -88,6 +88,8 @@ alc_dat_long %>%
   ggthemes::theme_few() + ggthemes::scale_color_few() + facet_grid(~gender) + labs(title = "Raw Trajectories", y = "Drinks", x = "Days")
 ```
 
+It is, in fact, a gender effect, and variance shrinks a great deal when the outcome is stratified on gender. Luckily, there does not seem to be heterogeneity of treatment effect by gender; the treatment trajectories look the same, but scaled to the respectice within-gender mean.
+
 Now, lets's look at faceting on relapsers vs. no relapsers:
 
 ```{r}
@@ -126,7 +128,8 @@ alc_dat_long %>%
 ```
 
 
-It is, in fact, a gender effect, and variance shrinks a great deal when the outcome is stratified on gender. Luckily, there does not seem to be heterogeneity of treatment effect by gender; the treatment trajectories look the same, but scaled to the respectice within-gender mean.
+
+# Questions 
 
 We can guess at the answers to a few of the researcher's questions:
 

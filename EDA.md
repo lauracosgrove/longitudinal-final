@@ -18,6 +18,8 @@ library(tidyverse)
     ## ✖ dplyr::filter() masks stats::filter()
     ## ✖ dplyr::lag()    masks stats::lag()
 
+# Read data
+
 ``` r
 alc_dat <- readxl::read_xls("./data/ALCDEP.xls")
 
@@ -27,7 +29,11 @@ alc_dat <- janitor::clean_names(alc_dat) %>%
 
 alc_dat_long <- alc_dat %>% 
   pivot_longer(nd0:nd60, names_to = "days", values_to = "drinks", names_prefix = "nd")
+```
 
+# Explore outcome distribution
+
+``` r
 summary(alc_dat_long$drinks)
 ```
 
@@ -42,6 +48,34 @@ var(alc_dat_long$drinks) #overdispersion if poisson
 
 ``` r
 alc_dat_long %>% 
+  group_by(gender) %>% 
+  summarize(mean = mean(drinks),
+            var = var(drinks))  #still overdispersion if poisson
+```
+
+    ## # A tibble: 2 x 3
+    ##   gender  mean   var
+    ##   <fct>  <dbl> <dbl>
+    ## 1 Male   129.  2038.
+    ## 2 Female  47.4  312.
+
+``` r
+#normal approximation?
+alc_dat_long %>% 
+  ggplot(aes(x = drinks)) + geom_histogram() #clearly not a normal distribution, clearly poisson
+```
+
+    ## `stat_bin()` using `bins = 30`. Pick better value with `binwidth`.
+
+![](EDA_files/figure-gfm/unnamed-chunk-3-1.png)<!-- -->
+
+Choose a poisson-distributed outcome and check diagnostics for
+overdispersion.
+
+# Exploratory Mean and Trajectory Plots
+
+``` r
+alc_dat_long %>% 
   group_by(treatment, days) %>% 
   summarize(mean_drinks = mean(drinks),
             upper = mean_drinks + sd(drinks),
@@ -53,7 +87,7 @@ alc_dat_long %>%
   ggthemes::theme_few() + ggthemes::scale_color_few()+ labs(title = "Mean, Trajectories by Treatment", y = "Drinks", x = "Days")
 ```
 
-![](EDA_files/figure-gfm/unnamed-chunk-2-1.png)<!-- -->
+![](EDA_files/figure-gfm/unnamed-chunk-4-1.png)<!-- -->
 
 ``` r
 alc_dat_long %>% 
@@ -69,7 +103,7 @@ alc_dat_long %>%
   ggthemes::theme_few() + ggthemes::scale_color_few() + facet_grid(~treatment) + labs(title = "Raw Trajectories", y = "Drinks", x = "Days")
 ```
 
-![](EDA_files/figure-gfm/unnamed-chunk-2-2.png)<!-- -->
+![](EDA_files/figure-gfm/unnamed-chunk-4-2.png)<!-- -->
 
 There are clearly two groups of patients in all groups, with a wide
 berth between the groups: those whose baseline number of alcoholic
@@ -92,7 +126,12 @@ alc_dat_long %>%
   ggthemes::theme_few() + ggthemes::scale_color_few() + facet_grid(~gender) + labs(title = "Raw Trajectories", y = "Drinks", x = "Days")
 ```
 
-![](EDA_files/figure-gfm/unnamed-chunk-3-1.png)<!-- -->
+![](EDA_files/figure-gfm/unnamed-chunk-5-1.png)<!-- -->
+
+It is, in fact, a gender effect, and variance shrinks a great deal when
+the outcome is stratified on gender. Luckily, there does not seem to be
+heterogeneity of treatment effect by gender; the treatment trajectories
+look the same, but scaled to the respectice within-gender mean.
 
 Now, lets’s look at faceting on relapsers vs. no relapsers:
 
@@ -184,10 +223,7 @@ alc_dat_long %>%
 #all pairwise differences are highly significant
 ```
 
-It is, in fact, a gender effect, and variance shrinks a great deal when
-the outcome is stratified on gender. Luckily, there does not seem to be
-heterogeneity of treatment effect by gender; the treatment trajectories
-look the same, but scaled to the respectice within-gender mean.
+# Questions
 
 We can guess at the answers to a few of the researcher’s questions:
 
