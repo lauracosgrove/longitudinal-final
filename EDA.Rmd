@@ -29,9 +29,12 @@ summary(alc_dat_long$drinks)
 var(alc_dat_long$drinks) #overdispersion if poisson
 
 alc_dat_long %>% 
-  group_by(gender) %>% 
+  group_by(gender, days, treatment) %>% 
   summarize(mean = mean(drinks),
-            var = var(drinks))  #still overdispersion if poisson
+            var = var(drinks),
+            scale = var/mean)  %>% 
+  knitr::kable() 
+#still some overdispersion if poisson in the gender x treatment x time model; maybe need negative binomial model, maybe not
 
 #normal approximation?
 alc_dat_long %>% 
@@ -39,7 +42,7 @@ alc_dat_long %>%
 
 ```
 
-Choose a poisson-distributed outcome and check diagnostics for overdispersion.
+Choose a poisson-distributed and negative-binomial distributed outcome and check diagnostics for overdispersion.
 
 # Exploratory Mean and Trajectory Plots
 ```{r}

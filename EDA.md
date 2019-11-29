@@ -48,18 +48,37 @@ var(alc_dat_long$drinks) #overdispersion if poisson
 
 ``` r
 alc_dat_long %>% 
-  group_by(gender) %>% 
+  group_by(gender, days, treatment) %>% 
   summarize(mean = mean(drinks),
-            var = var(drinks))  #still overdispersion if poisson
+            var = var(drinks),
+            scale = var/mean)  %>% 
+  knitr::kable() 
 ```
 
-    ## # A tibble: 2 x 3
-    ##   gender  mean   var
-    ##   <fct>  <dbl> <dbl>
-    ## 1 Male   129.  2038.
-    ## 2 Female  47.4  312.
+| gender | days | treatment |      mean |       var |     scale |
+| :----- | :--- | :-------- | --------: | --------: | --------: |
+| Male   | 0    | 1         | 186.51923 | 593.98002 | 3.1845511 |
+| Male   | 0    | 2         | 182.00000 | 405.24590 | 2.2266258 |
+| Male   | 0    | 3         | 180.35088 | 558.08897 | 3.0944622 |
+| Male   | 30   | 1         | 125.11538 | 324.02564 | 2.5898145 |
+| Male   | 30   | 2         | 122.87097 | 279.29455 | 2.2730720 |
+| Male   | 30   | 3         |  82.12281 | 168.64536 | 2.0535752 |
+| Male   | 60   | 1         | 123.53846 | 359.62594 | 2.9110444 |
+| Male   | 60   | 2         |  83.14516 | 115.14252 | 1.3848373 |
+| Male   | 60   | 3         |  82.22807 | 135.89348 | 1.6526410 |
+| Female | 0    | 1         |  67.14815 |  95.63802 | 1.4242837 |
+| Female | 0    | 2         |  68.06667 | 164.38182 | 2.4150120 |
+| Female | 0    | 3         |  67.11364 | 136.01004 | 2.0265634 |
+| Female | 30   | 1         |  45.94444 |  76.99686 | 1.6758687 |
+| Female | 30   | 2         |  42.97778 |  45.88586 | 1.0676648 |
+| Female | 30   | 3         |  30.63636 |  24.65539 | 0.8047754 |
+| Female | 60   | 1         |  44.22222 |  47.04403 | 1.0638096 |
+| Female | 60   | 2         |  28.73333 |  28.06364 | 0.9766927 |
+| Female | 60   | 3         |  28.47727 |  37.65063 | 1.3221292 |
 
 ``` r
+#still some overdispersion if poisson in the gender x treatment x time model; maybe need negative binomial model, maybe not
+
 #normal approximation?
 alc_dat_long %>% 
   ggplot(aes(x = drinks)) + geom_histogram() #clearly not a normal distribution, clearly poisson
@@ -69,8 +88,8 @@ alc_dat_long %>%
 
 ![](EDA_files/figure-gfm/unnamed-chunk-3-1.png)<!-- -->
 
-Choose a poisson-distributed outcome and check diagnostics for
-overdispersion.
+Choose a poisson-distributed and negative-binomial distributed outcome
+and check diagnostics for overdispersion.
 
 # Exploratory Mean and Trajectory Plots
 
