@@ -5,3 +5,33 @@ date: "11/29/2019"
 output: github_document
 ---
 
+# Read data
+
+```{r}
+alc_dat <- readxl::read_xls("./data/ALCDEP.xls")
+
+alc_dat <- janitor::clean_names(alc_dat) %>% 
+  mutate(treatment = factor(treatment)) %>% 
+  mutate(gender = factor(gender, levels = c(0,1), labels = c("Male", "Female")))
+
+alc_dat_long <- alc_dat %>% 
+  pivot_longer(nd0:nd60, names_to = "days", values_to = "drinks", names_prefix = "nd")
+```
+
+# Fit GEE models
+
+```{r}
+library(geepack)
+library(MASS)
+pois_gee <- geeglm(drinks ~ treatment*days + gender, 
+       family = poisson,
+       data = alc_dat_long,
+       id = sid,
+       corstr = "ar1")
+
+summary(pois_gee)
+
+broom::tidy(pois_gee, exponentiate = TRUE, conf.int= TRUE )
+
+```
+

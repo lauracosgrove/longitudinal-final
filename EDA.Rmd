@@ -130,6 +130,21 @@ alc_dat_long %>%
 #all pairwise differences are highly significant
 ```
 
+# Exploratory Correlation Plots
+
+```{r}
+sat_mod <- glm(drinks ~ factor(sid)*days, family = "poisson", data = alc_dat_long) #super saturated model
+alc_dat_long_expand <- alc_dat_long %>% 
+  modelr::add_residuals(sat_mod) %>% 
+  select(sid, days, treatment, gender, resid) %>% 
+  group_by(sid) %>% #to only give within-subject autocor-
+  complete(days = c("0", "30", "60", "90")) #padding with  NAs to calculate acf
+
+acf(alc_dat_long_expand$resid, lag.max = 2, na.action = na.pass, ci = 0,
+    main = "ACF function with lagged visits")
+
+```
+
 
 
 # Questions 
