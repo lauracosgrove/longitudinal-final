@@ -1,17 +1,15 @@
 ---
-title: "Models"
+title: "Code Appendix"
 author: "Laura Cosgrove"
-date: "11/29/2019"
+date: "12/4/2019"
 output: pdf_document
+toc: true
 ---
 
 ```{r}
 library(tidyverse)
 library(geepack)
-library(MASS)
-
 ```
-
 
 # Read data
 
@@ -26,12 +24,166 @@ alc_dat_long <- alc_dat %>%
   pivot_longer(nd0:nd60, names_to = "days", values_to = "drinks", names_prefix = "nd")
 ```
 
+# Explore outcome distribution
+
+```{r}
+summary(alc_dat_long$drinks)
+
+alc_dat_long %>% 
+  group_by(gender, days, treatment) %>% 
+  summarize(mean = mean(drinks),
+            var = var(drinks),
+            scale = var/mean)  %>% 
+  ggplot(aes(x = mean, y = var, color = scale)) + geom_point() + geom_abline(intercept = 0, slope = 1) + geom_smooth(method = "lm", color = "grey", se = FALSE) + ggthemes::theme_few() + scale_x_continuous(limits = c(0, 200)) + scale_y_continuous(limits = c(0, 600)) + labs(title = "Potential overdispersion in Poisson outcome")
+#still some overdispersion if poisson in the gender x treatment x time model; maybe need negative binomial model, maybe not
+
+#normal approximation?
+alc_dat_long %>% 
+ggplot(aes(x = drinks)) + geom_histogram(bins = 60) + ggthemes::theme_few() + facet_grid(c("gender"))
+#clearly not a normal distribution, clearly poisson
+
+```
+
+Choose a poisson-distributed outcome and check diagnostics for overdispersion.
+
+# Exploratory Mean and Trajectory Plots
+
+```{r}
+alc_dat_long %>% 
+  group_by(treatment, days) %>% 
+  summarize(mean_drinks = mean(drinks),
+            upper = mean_drinks + sd(drinks),
+            lower = mean_drinks - sd(drinks)) %>% 
+  ggplot(aes(x = days, color = treatment)) +
+  geom_line(aes(y = mean_drinks, group = treatment), size = 1) + 
+  geom_errorbar(aes(ymin = lower, ymax = upper, group = treatment), width = 0.2) + 
+  geom_point(aes(y = mean_drinks), size = 2) +
+  ggthemes::theme_few() + ggthemes::scale_color_few()+ labs(title = "Mean, Trajectories by Treatment", y = "Drinks", x = "Days")
+
+
+alc_dat_long %>% 
+  group_by(treatment, days) %>% 
+  summarize(mean_drinks = mean(drinks),
+            upper = mean_drinks + sd(drinks),
+            lower = mean_drinks - sd(drinks)) %>% 
+  ggplot(aes(x = days, color = treatment)) +
+  geom_line(aes(y = mean_drinks, group = treatment), size = 1) + 
+  geom_errorbar(aes(ymin = lower, ymax = upper, group = treatment), width = 0.2) + 
+  geom_point(aes(y = mean_drinks), size = 2) +
+  geom_line(data = alc_dat_long, aes(x = days, y = drinks, group = sid), alpha = 0.2) + 
+  ggthemes::theme_few() + ggthemes::scale_color_few() + facet_grid(~treatment) + labs(title = "Raw Trajectories", y = "Drinks", x = "Days")
+
+
+```
+
+There are clearly two groups of patients in all groups, with a wide berth between the groups: those whose baseline number of alcoholic drinks in the past 30 days is less than  100 (~3 drinks/day) and those who are closer to 150 in the past 30 days (5 drinks a day).
+
+Perhaps this could be a gender effect:
+
+```{r}
+alc_dat_long %>% 
+  group_by(treatment, days, gender) %>% 
+  summarize(mean_drinks = mean(drinks),
+            upper = mean_drinks + sd(drinks),
+            lower = mean_drinks - sd(drinks)) %>% 
+  ggplot(aes(x = days, color = treatment)) +
+  geom_line(data = alc_dat_long, aes(x = days, y = drinks, group = sid), alpha = 0.2) +
+  geom_line(aes(y = mean_drinks, group = treatment)) + 
+  geom_errorbar(aes(ymin = lower, ymax = upper, group = treatment), width = 0.2) + 
+  geom_point(aes(y = mean_drinks)) +
+  ggthemes::theme_few() + ggthemes::scale_color_few() + facet_grid(~gender) + labs(title = "Raw Trajectories", y = "Drinks", x = "Days")
+```
+
+It is, in fact, a gender effect, and variance shrinks a great deal when the outcome is stratified on gender. Luckily, there does not seem to be heterogeneity of treatment effect by gender; the treatment trajectories look the same, but scaled to the respective within-gender mean.
+
+Now, lets's look at faceting on relapsers vs. no relapsers:
+
+```{r}
+library(janitor)
+alc_dat %>% 
+  tabyl(treatment, relapse) %>% 
+  adorn_percentages("row") %>%
+  adorn_pct_formatting(digits = 2) %>%
+  adorn_ns() %>% 
+  knitr::kable(caption = "Contingency table of Relapse by Treatment")
+
+alc_dat %>% 
+  tabyl(treatment, relapse) %>% 
+  chisq.test()
+#significant differences. pairwise:
+
+alc_dat %>% 
+  filter(treatment %in% 1:2) %>% 
+  mutate(treatment = forcats::fct_drop(treatment)) %>% 
+  tabyl(treatment, relapse) %>% 
+  chisq.test(.)
+
+alc_dat %>% 
+  filter(treatment %in% c(1,3)) %>% 
+  mutate(treatment = forcats::fct_drop(treatment)) %>% 
+  tabyl(treatment, relapse) %>% 
+  chisq.test(.)
+
+alc_dat %>% 
+  filter(treatment %in% 2:3) %>% 
+  mutate(treatment = forcats::fct_drop(treatment)) %>% 
+  tabyl(treatment, relapse) %>% 
+  chisq.test(.)
+
+
+
+#all pairwise differences are highly significant
+
+alc_dat_grouped <- alc_dat %>% 
+  mutate(treatment = forcats::fct_relevel(treatment, "3")) %>% 
+  group_by(treatment, gender) %>% 
+  count(relapse) %>% 
+  pivot_wider(names_from = relapse, values_from = n, names_prefix = "relapse_")
+
+response_table = cbind(alc_dat_grouped$relapse_1, alc_dat_grouped$relapse_0)
+treatment <- alc_dat_grouped$treatment
+glm_relapse_ref <- glm(response_table ~ treatment , family = binomial) 
+
+broom::tidy(glm_relapse_ref, exponentiate = TRUE, conf.int = TRUE) %>% 
+    dplyr::select(term, estimate, std.error, conf.low, conf.high) %>% 
+  knitr::kable(caption = "Logistic Regression of Treatment on 6-month Relapse")
+
+
+broom::glance(glm_relapse_ref) %>% 
+  summarize(test = 1 - pchisq(deviance, df.residual)) #acceptable
+
+anova(glm_relapse_ref, test = "Chisq") #significant
+```
+
+
+# GEE models
+
+## Exploratory Correlation Plots
+
+```{r}
+sat_mod <- glm(drinks ~ gender + treatment*days, family = "poisson", data = alc_dat_long) #super saturated model
+alc_dat_long %>% 
+  modelr::add_residuals(sat_mod) %>% 
+  dplyr::select(sid, days, treatment, gender, resid) %>% 
+  mutate(days = as.numeric(days)) %>% 
+  group_by(sid) %>% 
+  mutate(lag_1 = lag(resid, 1),
+         lag_2 = lag(resid, 2)) %>% 
+  ungroup() %>% group_by(gender, treatment) %>% 
+  summarize(cor_0 = cor(resid, resid, use = "pairwise.complete.obs"),
+            cor_1 = cor(resid, lag_1, use = "pairwise.complete.obs"),
+            cor_2 = cor(resid, lag_2, use = "pairwise.complete.obs")) %>% ungroup() %>% 
+  summarize(cor_0 = mean(cor_0), cor_1 = mean(cor_1), cor_2 = mean(cor_2)) %>% 
+  pivot_longer(c("cor_0", "cor_1", "cor_2"), names_to = "lag", values_to = "cor", names_prefix = "cor_") %>%
+  ggplot(aes(x = lag, y = cor)) +
+  geom_col(width = 0.1) + 
+  labs(title = "ACF with lagged measurements") 
+```
+
+
 # Fit GEE models
 
 ```{r}
-alc_dat_long <- alc_dat_long %>% 
-  mutate(exposure = 30)
-
 pois_gee <- geeglm(drinks ~ treatment*days + gender,
        family = poisson,
        data = alc_dat_long,
@@ -39,14 +191,6 @@ pois_gee <- geeglm(drinks ~ treatment*days + gender,
        corstr = "exchangeable")
 
 summary(pois_gee)
-
-pois_gee_ar1 <- geeglm(drinks ~ treatment*days + gender,
-       family = poisson,
-       data = alc_dat_long,
-       id = sid,
-       corstr = "ar1")
-
-summary(pois_gee_ar1)
 
 
 pois_gee_int <- geeglm(drinks ~ treatment*days + treatment*gender,
@@ -164,26 +308,9 @@ trt3day60totrt2day60_ci = c(exp(log(trt3day60totrt2day60_rr) - qchisq(0.975, 1)*
 
 broom::tidy(pois_gee, exponentiate = TRUE, conf.int = TRUE) %>% 
   dplyr::select(term, estimate, std.error, conf.low, conf.high) %>% 
-  knitr::kable(caption = "Ratio of expected counts from Poisson GEE model (AR1 covariance)")
+  knitr::kable(caption = "Ratio of expected counts from Poisson GEE model (Exchangeable covariance)")
 
 ```
 
 
-
-
-
-
-# fit mixed effect model to use negative binomial? nope - overdispersion is not important
-
-```{r}
-pois_glmm <- lme4::lmer(drinks ~ treatment*days + gender + (1|sid), 
-       family = poisson,
-       data = alc_dat_long)
-summary(pois_glmm)
-library(glmmTMB)
-nb_glmm <- glmmTMB(drinks ~ treatment*days + gender + (1|sid), 
-       family = nbinom1,
-       data = alc_dat_long)
-summary(nb_glmm)
-```
 

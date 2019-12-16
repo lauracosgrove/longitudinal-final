@@ -2,7 +2,7 @@
 title: "Exploratory Data Analysis"
 author: "Laura Cosgrove"
 date: "11/27/2019"
-output: github_document
+output: pdf_document
 ---
 
 ```{r}
@@ -26,23 +26,23 @@ alc_dat_long <- alc_dat %>%
 
 ```{r}
 summary(alc_dat_long$drinks)
-var(alc_dat_long$drinks) #overdispersion if poisson
 
 alc_dat_long %>% 
   group_by(gender, days, treatment) %>% 
   summarize(mean = mean(drinks),
             var = var(drinks),
             scale = var/mean)  %>% 
-  knitr::kable() 
+  ggplot(aes(x = mean, y = var, color = scale)) + geom_point() + geom_abline(intercept = 0, slope = 1) + geom_smooth(method = "lm", color = "grey", se = FALSE) + ggthemes::theme_few() + scale_x_continuous(limits = c(0, 200)) + scale_y_continuous(limits = c(0, 600)) + labs(title = "Potential overdispersion in Poisson outcome")
 #still some overdispersion if poisson in the gender x treatment x time model; maybe need negative binomial model, maybe not
 
 #normal approximation?
 alc_dat_long %>% 
-  ggplot(aes(x = drinks)) + geom_histogram() #clearly not a normal distribution, clearly poisson
+ggplot(aes(x = drinks)) + geom_histogram(bins = 60) + ggthemes::theme_few() + facet_grid(c("gender"))
+#clearly not a normal distribution, clearly poisson
 
 ```
 
-Choose a poisson-distributed and negative-binomial distributed outcome and check diagnostics for overdispersion.
+Choose a poisson-distributed outcome and check diagnostics for overdispersion.
 
 # Exploratory Mean and Trajectory Plots
 ```{r}
@@ -84,7 +84,7 @@ alc_dat_long %>%
             upper = mean_drinks + sd(drinks),
             lower = mean_drinks - sd(drinks)) %>% 
   ggplot(aes(x = days, color = treatment)) +
-  geom_line(data = alc_dat_long, aes(x = days, y = drinks, group = sid), alpha = 0.1) +
+  geom_line(data = alc_dat_long, aes(x = days, y = drinks, group = sid), alpha = 0.2) +
   geom_line(aes(y = mean_drinks, group = treatment)) + 
   geom_errorbar(aes(ymin = lower, ymax = upper, group = treatment), width = 0.2) + 
   geom_point(aes(y = mean_drinks)) +
@@ -97,52 +97,82 @@ Now, lets's look at faceting on relapsers vs. no relapsers:
 
 ```{r}
 library(janitor)
-alc_dat_long %>% 
+alc_dat %>% 
   tabyl(treatment, relapse) %>% 
   adorn_percentages("row") %>%
   adorn_pct_formatting(digits = 2) %>%
   adorn_ns() %>% 
   knitr::kable(caption = "Contingency table of Relapse by Treatment")
 
-alc_dat_long %>% 
+alc_dat %>% 
   tabyl(treatment, relapse) %>% 
   chisq.test()
 #significant differences. pairwise:
 
-alc_dat_long %>% 
+alc_dat %>% 
   filter(treatment %in% 1:2) %>% 
   mutate(treatment = forcats::fct_drop(treatment)) %>% 
   tabyl(treatment, relapse) %>% 
   chisq.test(.)
 
-alc_dat_long %>% 
-  filter(treatment %in% 1:3) %>% 
+alc_dat %>% 
+  filter(treatment %in% c(1,3)) %>% 
   mutate(treatment = forcats::fct_drop(treatment)) %>% 
   tabyl(treatment, relapse) %>% 
   chisq.test(.)
 
-alc_dat_long %>% 
+alc_dat %>% 
   filter(treatment %in% 2:3) %>% 
   mutate(treatment = forcats::fct_drop(treatment)) %>% 
   tabyl(treatment, relapse) %>% 
   chisq.test(.)
 
+
+
 #all pairwise differences are highly significant
+
+alc_dat_grouped <- alc_dat %>% 
+  mutate(treatment = forcats::fct_relevel(treatment, "3")) %>% 
+  group_by(treatment, gender) %>% 
+  count(relapse) %>% 
+  pivot_wider(names_from = relapse, values_from = n, names_prefix = "relapse_")
+
+response_table = cbind(alc_dat_grouped$relapse_1, alc_dat_grouped$relapse_0)
+
+glm_relapse_ref <- glm(response_table ~ alc_dat_grouped$treatment , family = binomial) 
+
+broom::tidy(glm_relapse_ref, exponentiate = TRUE, conf.int = TRUE)
+
+broom::glance(glm_relapse_ref) %>% 
+  summarize(test = 1 - pchisq(deviance, df.residual))
+
+anova(glm_relapse_ref, test = "Chisq")
 ```
 
 # Exploratory Correlation Plots
 
 ```{r}
-sat_mod <- glm(drinks ~ factor(sid)*days, family = "poisson", data = alc_dat_long) #super saturated model
-alc_dat_long_expand <- alc_dat_long %>% 
+sat_mod <- glm(drinks ~ gender + treatment*days, family = "poisson", data = alc_dat_long) #super saturated model
+alc_dat_long %>% 
   modelr::add_residuals(sat_mod) %>% 
-  select(sid, days, treatment, gender, resid) %>% 
-  group_by(sid) %>% #to only give within-subject autocor-
-  complete(days = c("0", "30", "60", "90")) #padding with  NAs to calculate acf
+  dplyr::select(sid, days, treatment, gender, resid) %>% 
+  mutate(days = as.numeric(days)) %>% 
+  group_by(sid) %>% 
+  mutate(lag_1 = lag(resid, 1),
+         lag_2 = lag(resid, 2)) %>% 
+  ungroup() %>% group_by(gender, treatment) %>% 
+  summarize(cor_0 = cor(resid, resid, use = "pairwise.complete.obs"),
+            cor_1 = cor(resid, lag_1, use = "pairwise.complete.obs"),
+            cor_2 = cor(resid, lag_2, use = "pairwise.complete.obs")) %>% ungroup() %>% 
+  summarize(cor_0 = mean(cor_0), cor_1 = mean(cor_1), cor_2 = mean(cor_2)) %>% 
+  pivot_longer(c("cor_0", "cor_1", "cor_2"), names_to = "lag", values_to = "cor", names_prefix = "cor_") %>%
+  ggplot(aes(x = lag, y = cor)) +
+  geom_col(width = 0.1) + 
+  labs(title = "ACF with lagged measurements") 
 
-acf(alc_dat_long_expand$resid, lag.max = 2, na.action = na.pass, ci = 0,
-    main = "ACF function with lagged visits")
-
+alc_dat_long %>% 
+  distinct(sid, .keep_all = TRUE) %>% 
+  count(gender, treatment)
 ```
 
 

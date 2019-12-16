@@ -1,0 +1,317 @@
+---
+title: "Report"
+author: "Laura Cosgrove"
+date: "12/4/2019"
+output: pdf_document
+fontsize: 12pt
+geometry: margin=1in
+latex_engine: "xelatex"
+header-includes:
+   - \usepackage{setspace}
+   - \doublespacing
+
+---
+
+```{r echo = FALSE, include = FALSE, message = FALSE, warning=FALSE}
+library(tidyverse)
+library(geepack)
+```
+
+
+```{r echo = FALSE, include = FALSE, message = FALSE, warning = FALSE}
+alc_dat <- readxl::read_xls("./data/ALCDEP.xls")
+
+
+alc_dat <- janitor::clean_names(alc_dat) %>% 
+  mutate(treatment = factor(treatment)) %>% 
+  mutate(gender = factor(gender, levels = c(0,1), labels = c("Male", "Female")))
+
+alc_dat_long <- alc_dat %>% 
+  pivot_longer(nd0:nd60, names_to = "days", values_to = "drinks", names_prefix = "nd")
+```
+
+```{r echo = FALSE, include = FALSE, message = FALSE, warning = FALSE}
+alc_dat_long <- alc_dat_long %>% 
+  mutate(exposure = 30)
+
+pois_gee <- geeglm(drinks ~ treatment*days + gender,
+       family = poisson,
+       data = alc_dat_long,
+       id = sid,
+       corstr = "exchangeable")
+
+summary(pois_gee)
+
+
+pois_gee_ar1 <- geeglm(drinks ~ treatment*days + gender,
+       family = poisson,
+       data = alc_dat_long,
+       id = sid,
+       corstr = "ar1")
+
+summary(pois_gee_ar1)
+
+
+pois_gee_int <- geeglm(drinks ~ treatment*days + treatment*gender,
+       family = poisson,
+       data = alc_dat_long,
+       id = sid,
+       corstr = "ar1")
+
+summary(pois_gee_int) #ns
+
+pois_gee_intd <- geeglm(drinks ~ treatment*days + days*gender,
+       family = poisson,
+       data = alc_dat_long,
+       id = sid,
+       corstr = "ar1")
+
+
+broom::tidy(pois_gee_intd, exponentiate = TRUE, conf.int = TRUE) #significant effect for day 60 but very small
+
+anova(pois_gee, pois_gee_int)
+anova(pois_gee, pois_gee_intd)
+
+
+
+
+##Trajectories##
+#get contrast of treatment 3 days 60 to treatment 3 days 30
+#get contrast of treatment 1 days 60 to treatment 1 days 30
+#get contrast of treatment 3 days 60 to treatment 3 days 30
+
+## Treatment effect ##
+#get contrast of treatment 3 days 60 to treatment 2 days 60
+#get contrast of treatment 3 days 60 to treatment 2 days 20
+
+colnames(pois_gee$geese$vbeta) = names(coef(pois_gee))
+rownames(pois_gee$geese$vbeta) = names(coef(pois_gee))
+var_b0 = pois_gee$geese$vbeta["(Intercept)","(Intercept)"]
+var_b1 = pois_gee$geese$vbeta["treatment2","treatment2"]
+var_b2 = pois_gee$geese$vbeta["(Intercept)","(Intercept)"]
+var_b3 = pois_gee$geese$vbeta["(Intercept)","(Intercept)"]
+var_b4 = pois_gee$geese$vbeta["(Intercept)","(Intercept)"]
+
+var_b6 = pois_gee$geese$vbeta["genderFemale","genderFemale"]
+cov_b0b6 = pois_gee$geese$vbeta["genderFemale","(Intercept)"]
+women_count_baseline = exp(coef(pois_gee)["(Intercept)"] + coef(pois_gee)["genderFemale"])
+women_var_baseline = var_b0 + var_b6 + 2*cov_b0b6
+women_ci_baseline = c(exp(coef(pois_gee)["(Intercept)"] + coef(pois_gee)["genderFemale"] - qchisq(0.975, 1)*sqrt(women_var_baseline)), exp(coef(pois_gee)["(Intercept)"] + coef(pois_gee)["genderFemale"] + qchisq(0.975, 1)*sqrt(women_var_baseline)))
+
+var_b4 = pois_gee$geese$vbeta["days30","days30"]
+var_b5 = pois_gee$geese$vbeta["days60","days60"]
+cov_b4b5 = pois_gee$geese$vbeta["days30","days60"]
+d30_to_d60_rr = exp(coef(pois_gee)["days60"] - coef(pois_gee)["days30"])
+d30_d60_var = var_b4 + var_b5 - 2*cov_b4b5
+d30_to_d60_ci = c(exp(coef(pois_gee)["days60"] - coef(pois_gee)["days30"] - qchisq(0.975, 1)*sqrt(d30_d60_var)), exp(coef(pois_gee)["days60"] - coef(pois_gee)["days30"] + qchisq(0.975, 1)*sqrt(d30_d60_var)))
+
+#treatment 2 to treatment 1
+var_trt2 = pois_gee$geese$vbeta["treatment2","treatment2"]
+var_trt2d30 = pois_gee$geese$vbeta["treatment2:days30","treatment2:days30"]
+cov_day30trt2 = pois_gee$geese$vbeta["treatment2:days30","treatment2"]
+trt2day30totrt1day30_rr = exp(coef(pois_gee)["treatment2"] + coef(pois_gee)["treatment2:days30"])
+trt2day30totrt1day30_var = var_trt2 + var_trt2d30 - 2*cov_day30trt2
+trt2day30totrt1day30_ci = c(exp(log(trt2day30totrt1day30_rr) - qchisq(0.975, 1)*sqrt(trt2day30totrt1day30_var)), exp(log(trt2day30totrt1day30_rr) + qchisq(0.975, 1)*sqrt(trt2day30totrt1day30_var)))
+
+var_trt2d60 = pois_gee$geese$vbeta["treatment2:days60","treatment2:days60"]
+cov_day60trt2 = pois_gee$geese$vbeta["treatment2:days60","treatment2"]
+trt2day60totrt1day60_rr = exp(coef(pois_gee)["treatment2"] + coef(pois_gee)["treatment2:days60"])
+trt2day60totrt1day60_var = var_trt2 + var_trt2d60 + 2*cov_day60trt2
+trt2day60totrt1day60_ci = c(exp(log(trt2day60totrt1day60_rr) - qchisq(0.975, 1)*sqrt(trt2day60totrt1day60_var)), exp(log(trt2day60totrt1day60_rr) + qchisq(0.975, 1)*sqrt(trt2day60totrt1day60_var)))
+
+cov_day60day30trt2 = pois_gee$geese$vbeta["treatment2:days60","treatment2:days30"]
+trt2trt1_day60today30_r_rr = exp(coef(pois_gee)["treatment2:days60"] - coef(pois_gee)["treatment2:days30"])
+trt2trt1_day60today30_r_var = var_trt2d30 + var_trt2d60 - 2*cov_day60day30trt2
+trt2trt1_day60today30_r_ci = c(exp(log(trt2trt1_day60today30_r_rr) - qchisq(0.975, 1)*sqrt(trt2trt1_day60today30_r_var)), exp(log(trt2trt1_day60today30_r_rr) + qchisq(0.975, 1)*sqrt(trt2trt1_day60today30_r_var)))
+
+#treatment 3 to treatment 1
+var_trt3 = pois_gee$geese$vbeta["treatment3","treatment3"]
+var_trt3d30 = pois_gee$geese$vbeta["treatment3:days30","treatment3:days30"]
+cov_day30trt3 = pois_gee$geese$vbeta["treatment3:days30","treatment3"]
+trt3day30totrt1day30_rr = exp(coef(pois_gee)["treatment3"] + coef(pois_gee)["treatment3:days30"])
+trt3day30totrt1day30_var = var_trt3 + var_trt3d30 - 2*cov_day30trt3
+trt3day30totrt1day30_ci = c(exp(log(trt3day30totrt1day30_rr) - qchisq(0.975, 1)*sqrt(trt3day30totrt1day30_var)), exp(log(trt3day30totrt1day30_rr) + qchisq(0.975, 1)*sqrt(trt3day30totrt1day30_var)))
+
+var_trt3d60 = pois_gee$geese$vbeta["treatment3:days60","treatment3:days60"]
+cov_day60trt3 = pois_gee$geese$vbeta["treatment3:days60","treatment3"]
+trt3day60totrt1day60_rr = exp(coef(pois_gee)["treatment3"] + coef(pois_gee)["treatment3:days60"])
+trt3day60totrt1day60_var = var_trt3 + var_trt3d60 + 2*cov_day60trt3
+trt3day60totrt1day60_ci = c(exp(log(trt3day60totrt1day60_rr) - qchisq(0.975, 1)*sqrt(trt3day60totrt1day60_var)), exp(log(trt3day60totrt1day60_rr) + qchisq(0.975, 1)*sqrt(trt3day60totrt1day60_var)))
+
+cov_day60day30trt3 = pois_gee$geese$vbeta["treatment3:days60","treatment3:days30"]
+trt3trt1_day60today30_r_rr = exp(coef(pois_gee)["treatment3:days60"] - coef(pois_gee)["treatment3:days30"])
+trt3trt1_day60today30_r_var = var_trt3d30 + var_trt3d60 - 2*cov_day60day30trt3
+trt3trt1_day60today30_r_ci = c(exp(log(trt3trt1_day60today30_r_rr) - qchisq(0.975, 1)*sqrt(trt3trt1_day60today30_r_var)), exp(log(trt3trt1_day60today30_r_rr) + qchisq(0.975, 1)*sqrt(trt3trt1_day60today30_r_var)))
+
+
+#treatment 3 to treatment 2
+cov_day30trt3trt2 = pois_gee$geese$vbeta["treatment3:days30","treatment2"]
+cov_day30trt3day30trt2 = pois_gee$geese$vbeta["treatment3:days30","treatment2:days30"]
+cov_trt3day30trt2 = pois_gee$geese$vbeta["treatment3","treatment2:days30"]
+cov_trt3trt2 = pois_gee$geese$vbeta["treatment3","treatment2"]
+trt3day30totrt2day30_rr = exp(coef(pois_gee)["treatment3"] + coef(pois_gee)["treatment3:days30"] - 
+                                coef(pois_gee)["treatment2"] - coef(pois_gee)["treatment2:days30"])
+trt3day30totrt2day30_var = var_trt3 + var_trt3d30 + var_trt2 + var_trt2d30 + 2*cov_day30trt3 + 2*cov_day30trt2 - 2*cov_day30trt3trt2 -2*cov_day30trt3day30trt2 -2*cov_trt3day30trt2 - 2*cov_trt3trt2
+trt3day30totrt2day30_ci = c(exp(log(trt3day30totrt2day30_rr) - qchisq(0.975, 1)*sqrt(trt3day30totrt2day30_var)), exp(log(trt3day30totrt2day30_rr) + qchisq(0.975, 1)*sqrt(trt3day30totrt2day30_var)))
+
+cov_day60trt3trt2 = pois_gee$geese$vbeta["treatment3:days60","treatment2"]
+cov_day60trt3day60trt2 = pois_gee$geese$vbeta["treatment3:days60","treatment2:days60"]
+cov_trt3day60trt2 = pois_gee$geese$vbeta["treatment3","treatment2:days60"]
+cov_trt3trt2 = pois_gee$geese$vbeta["treatment3","treatment2"]
+trt3day60totrt2day60_rr = exp(coef(pois_gee)["treatment3"] + coef(pois_gee)["treatment3:days60"] - 
+                                coef(pois_gee)["treatment2"] - coef(pois_gee)["treatment2:days60"])
+trt3day60totrt2day60_var = var_trt3 + var_trt3d30 + var_trt2 + var_trt2d30 + 2*cov_day30trt3 + 2*cov_day30trt2 - 2*cov_day60trt3trt2 -2*cov_day30trt3day30trt2 -2*cov_trt3day30trt2 - 2*cov_trt3trt2
+trt3day60totrt2day60_ci = c(exp(log(trt3day60totrt2day60_rr) - qchisq(0.975, 1)*sqrt(trt3day60totrt2day60_var)), exp(log(trt3day60totrt2day60_rr) + qchisq(0.975, 1)*sqrt(trt3day60totrt2day60_var)))
+
+summary(pois_gee)
+```
+
+
+
+# Abstract
+
+  The effects of interventions on concurrent alcohol consumption were compared in a balanced sample of men and women. The treatments all included an educational component and daily tracking of alcohol consumption, and either monthly, monthly and weekly, or monthly and daily alcohol consumption reporting. On average, all treatment groups demonstrated reductions in drinking. At the end of the treatment period, he treatment group required to report daily alcohol consumption had a similar reduction of past-30-day alcoholic drinks as the treatment group required to report weekly alcohol consumption, and both had more reduction that the treatment group only required to report alcohol consumption monthly. However, the daily reporting treatment group had both a lower odds of relapse (16.1% odds,  95% CI 8.8% - 27.3%) compared to each other treatment group, and had a significantly smaller ratio of counts of past-30-day alcoholic drinks compared to each other treatment group when measured at 30 days. Future work should compare the most successful treatment, daily reporting, to other treatment strategies for reducing alcohol consumption.
+
+# Introduction
+
+  This randomized study assigns three, increasingly intensive types of psychological and educational alcohol-related interventions in order to see if these interventions were helpful in reducing alcohol dependence when administered over a 60-day period. Of 314 subjects suffering from alcohol dependence, 171 were male and 143 were female. 52 men and 54 women were randomized to treatment 1; 62 men and 45 women were randomized to treatment 2; and 57 men and 44 women were randomized to treatment 3. At three timepoints, baseline, 30, and 6 days, the total number of drinks consumed in the 30 days immediately was recorded. The treatments consisted of the following:
+
+1.  Treatment 1 :  Subjects were given DVD, pamphlets and other instructional materials related to alcohol dependency.  The subjects kept track of their daily alcohol consumption and reported the total number of drinks consumed in the last 30 days on the 30th and 60th day.
+
+2.  Treatment 2 :  Subjects were given DVD, pamphlets and other instructional materials related to alcohol dependency and were required to report the number of drinks consumed at the end of every week.
+
+3.  Treatment 3 :  Subjects were given DVD, pamphlets and other instructional materials related to alcohol dependency and were required to report the number of drinks consumed daily using a toll-free phone number.
+
+The study had one, 6-month followup where the researchers categorized whether the subject had relapsed into alcohol dependence or not. It is unclear what the criteria for alcohol dependence relapse was in terms of number of drinks consumed in the past 30 days. Therefore, the relapse outcome and the drinks reported outcome will be investigated separately and a composite recommendation will be given.
+
+# Methods
+
+## Relapse
+
+  An overall chi-squared test were performed to test the null hypothesis that that treatments do not differ in their effects on subjects with regard to relapsing into alcohol dependence (Table 1). Bonferroni-corrected pairwise tests will be performed if the null hypothesis is rejected. A generalized linear model for the relapse outcome was fit to compare the odds of relapsing among the treatment group; this relates the binomially-distributed a Poisson mean model was used with the log link function to relate the count outcomes to the linear predictor of gender (male and female), treatment (1, 2, and 3), measurement (days 0, 30, and 60), and treatment's interaction with the measurement time.
+
+## Alcohol Consumption
+
+  Exploratory analysis indicates heterogeneous data, clustered by individual, with group-level trends (over time, by gender, and by treatment over time (Figure 1). A generalized estimating equations (GEE) approach was taken to formalize this description and answer the scientific question in terms of how predictors (treatment, gender, and time) exert their effects on the expected outcome (past-30-day count of alcoholic drinks), while accounting for the clustered nature of the data by allowing each individual's data to follow a correlation structure. GEE is one popular method for modeling longitudinal, or clustered, data, in addition to mixed effects models. Because the inquiry is about the average treatment effect on the different treated groups, the GEE approach to recover population averaged effects even in the generalized linear model setting, as opposed to mixed effects models subject-specific inference, it is appropriate for this setting. Since the reported data are counts, a Poisson mean model was used with the log link function to relate the count outcomes to the linear predictor of gender (male and female), treatment (1, 2, and 3), measurement (days 0, 30, and 60), and treatment's interaction with the measurement time. Overdispersion of the count outcome's variance was estimated with the GEE procedure, and was likely given indications of overdispersion in exploratory data analysis of the mean and variance of treatment, time, and gender subgroups (Figure 2).
+
+  Based on the examined autocorrelation plots, a working exchangeable covariance structure was chosen, which indicates identical autocorrelation of measurements, if measurements are identically far apart (Figure 3). However, even if the working correlation structure may have been misspecified, the large sample size of the study indicates that the sandwich estimator is consistent and robust to misspecification.
+
+# Results
+
+  The scale parameter for variance of the outcome in the GEE was estimated to be 1.9, indicating overdispersion - a non-overdispersed Poisson outcome would have mean equal to variance. The estimated correlation parameter in the GEE was 0.46, which is consistent with our exploratory data analysis.
+
+  Exploratory data analysis and an overall chi-squared test suggests that treatments differ in their effects on subjects with regard to relapsing into alcohol dependence ($\chi^2_2 = 97$). After pairwise chi-squared tests, we find that all pairwise differences are highly significant under a Bonferroni-corrected $\alpha_B = 0.0167$. So, treatments 1 and 2 significantly differ in the distributions of relapsers, and treatment 2 had fewer relapsers than treatment 1; and treatments 2 and 3 significantly differ in the distributions of relapsers, and treatment 3 had fewer relapsers than treatment 2 (Table 1). Finally, the grouped logistic regression model of treatment on relapse had appropriate fit ($\chi^2_{3} = 0.745$, p-value = 0.863) and showed that patients in treatment 1 have an odds ratio of relapse of 28.5 (95% CI 13.8,  62.6) compared to treatment 3, and that patients in treatment 2 have an odds ratio of relapse of 5.25 (95% CI 2.72,  10.7) compared to treatment 3 (Table 2). This indicates that treatment 3 is preferred in terms of the relapse outcome.
+
+  Results for the generalized estimating equation model of the expected count of past-30-day drinks on treatment, timepoints, and gender are in Table (3). At baseline in treatment 1, the expected count of past-30 day alcoholic drinks for men is 186 (95% Wald CI 180, 192), and for women the expected count is `r women_count_baseline` (95% Wald CI `r women_ci_baseline[1]` , `r women_ci_baseline[2]`). These estimates of the baseline count by gender do not significantly differ between treatments, indicating that randomization was successful.
+
+  A treatment by gender term was tested and was nonsignificant by a Wald test at $\alpha = 0.05)$, $\chi_2^2 = 0.251$, and similarly a days by gender term was tested and was nonsignificant at $\alpha = 0.05)$, $\chi_2^2 = 5.86$.
+
+  The ratio of the expected count of past-30 day alcoholic drinks for those in treatment 1 30 days after baseline compared to baseline is 0.674 (95% CI 0.656 - 0.694), adjusted for gender. The ratio of the expected count of past-30 day alcoholic drinks for those in treatment 1 60 days after baseline compared to baseline is 0.661 (95% CI 0.645 - 0.678). From day 30 to day 60, the ratio of the expected count of past-30 day alcoholic drinks for those in treatment 1 is  `r d30_to_d60_rr`and the 95% CI is (`r d30_to_d60_ci`). This means that the expected count of past-30 day alcoholic drinks is not significantly different from day 30 to day 60 for the population of patients in treatment 1.
+
+  The ratio of the expected count of past-30 day alcoholic drinks for those in treatment 2 at 30 days compared to those in treatment 1 at 30 days  is `r trt2day30totrt1day30_rr` (95% CI `r trt2day30totrt1day30_ci`), adjusted for gender. The ratio of the expected count of past-30 day alcoholic drinks for those in treatment 2 at 60 days compared to those in treatment 1 at 60 days is is `r trt2day60totrt1day60_rr` (95% CI `r trt2day60totrt1day60_ci`). And the difference-in-difference, that is, the ratio of the ratio of expected count of past-30 day alcoholic drinks for those in treatment 2 at 60 days compared to at 30 days to the ratio of expected count of past-30 day alcoholic drinks for those in treatment 1 at 60 days compared to at 30 days is `r trt2trt1_day60today30_r_rr` (95% CI `r trt2trt1_day60today30_r_ci`). This means that while treatment 1 and 2 do not differ in trajectory from days 0 to 30, their trajectories diverge during the day 30 to day 60 period, where those in treatment 2 have a ratio of past-30 day expected drinks at day 60 over day 30 that is 0.688 times that of the treatment 1 ratio (which is not significantly different from 1, as shown above). 
+
+  The ratio of the expected count of past-30 day alcoholic drinks for those in treatment 3 at 30 days compared to those in treatment 1 at 30 days  is `r trt3day30totrt2day30_rr` (95% CI `r trt3day30totrt1day30_ci`), adjusted for gender. The ratio of the expected count of past-30 day alcoholic drinks for those in treatment 3 at 60 days compared to those in treatment 1 at 60 days is is `r trt3day60totrt1day60_rr` (95% CI `r trt3day60totrt1day60_ci`). Looking at the trajectory compared to treatment 1, the ratio of the ratio of expected drinks for those in treatment 2 reported at 60 days compared to those reported at 30 days to the ratio of expected drinks for those in treatment 1 at 60 days vs. 30 days is `r trt3trt1_day60today30_r_rr` (95% CI `r trt3trt1_day60today30_r_ci`). This means treatment 1 and 3 differ at days 30 and at days 60 in terms of the expected counts of alcoholic drinks, with treatment 3 being more efficacious at reducing counts of alcoholic drinks. But they do not differ in terms of their respective change in expected count of alcoholic drinks from the day 30 to day 60 period, indicating that treatment 3, similar to treatment 1, has most of its reduction effects in the first block of time between day 0 and day 30. 
+
+  The ratio of the expected count of past-30 day alcoholic drinks for those in treatment 3 at 30 days compared to those in treatment 2 at 30 days  is `r trt3day30totrt1day30_rr` (95% CI `r trt3day30totrt2day30_ci`), adjusted for gender. The ratio of the expected count of past-30 day alcoholic drinks for those in treatment 3 at 60 days compared to those in treatment 2 at 60 days is is `r trt3day60totrt2day60_rr` (95% CI `r trt3day60totrt2day60_ci`). This means treatment 2 and 3 differ at day 30 in terms of the expected counts of alcoholic drinks, with treatment 3 being more efficacious,  but they do not differ at day 60. 
+
+# Conclusions
+
+  There is evidence to suggest that the treatments differ in their effects on alcohol dependence among population subgroups defined by treatment, observed at particular times. Because this is a GEE model, the reduction has an interpretation that applies to the average treatment effect, but no subject-level inference (e.g., heterogeneity of treatment effect in a particular patients) can be applied. After 60 days of treatment, the populations of patients in both treatment 2 and treatment 3 are each expected to report about 2/3 times the expected past-30-day counts of alcoholic drinks of those in treatment 1. While the population of patients in treatment 1, the least logistically burdensome treatment, have a higher expected count of  past-30-day drinks after 60 days of treatment compared to other treatments, patients still experience a reduction compared to baseline of about 2/3 times the baseline past-30-day count of alcoholic drinks.
+
+  The pattern of change in the number of drinks consumed differs between treatment 2 and treatment 1 and 3. Patients in treatments 1 and 3 have similar trajectories of alcoholic drink consumption, with the reduction occurring between day 0 and day 30 and no significant reduction (or increase) between day 30 and day 60. However, patients in treatment 3 have a steeper reduction from day 0 to 30 than those in treatment 1 (the 30-day count being `r trt3day30totrt2day30_rr` times that of treatment 1, or about an average of 85 drinks for men and 31 drinks for women in treatment 3 compared to an average of 125 drinks for men and 46 drinks for women in treatment 1). Patients in treatment 2 have a different trajectory: reduction occurs in both the day 0-30 blocks and day 30-60 blocks. Patients in treatment 2 do not have a significant difference in reduction compared to treatment 1 at 30 days, but at 60 days, the ratio of the expected count of past 30-day alcoholic drinks for treatment 2 versus treatment 1 is estimated as `r trt2day60totrt1day60_rr`. And while they differ at 30 days, treatment 2 is not significantly different from treatment 3 in terms of the expected past-30 day count of alcoholic drinks at 60 days, (ratio estimated as `r trt3day60totrt2day60_rr`).
+
+  These trajectories and treatment effects are not significantly heterogeneous between the gender subgroups; men and women differ in that women have a baseline expected count of alcoholic drinks about 0.363x that of men in this study.  Additional visual information supporting a lack of heterogeneity of treatment effects by gender is shown in Figure 1.
+  
+  Following the treatment period, treatment 3 had significantly fewer relapsers than treatment 2 - 14% versus 46% (Table 1). Given that treatment 3 had similar 60-day drinking outcomes as treatment 2, and given that the reduction occurred in the first 30 days of treatment, treatment 3 does seem preferred. However, this recommendation must be qualified by the fact that there was no control group recruited for either the drinking outcomes or the relapse outcome, so it is not clear whether the relapse rate in treatment 3 is better or worse than what would have occurred under an alternative alcohol withdrawal. That is, the relapse outcomes need to be put into context in terms of a clinically relevant relapse rate to judge whether the treatments have "lasting beneficial effects" in terms of avoiding relapse. In terms of number of drinks per day, we do not have the data to suggest whether any of the treatment groups continue to reduce the number of drinks per 30 day period after the end of treatment (nor do we have evidence to suggest whether the number of drinks per day remains stable or not).
+  
+  To conclude, if one were to choose between the three treatments in this study to reduce, on average, alcohol drinks consumed during the 3 month period and to prevent 6-month relapse, the educational intervention combined with daily reporting of drinks consumed has a faster onset of beneficial effects compared to the educational intervention with only weekly reporting, and has a larger  beneficial effect compared to the educational intervention with only monthly reporting. Compared to the other treatments, patients in the educational intervention combined with with daily reporting also have lower odds of relapse. 
+  
+
+
+\newpage
+
+# Tables and Figures
+
+```{r message = FALSE, warning = FALSE, echo = FALSE, fig.cap = "Raw Trajectories of Past-30-Day Drinks Reported"}
+alc_dat_long %>% 
+  group_by(treatment, days, gender) %>% 
+  summarize(mean_drinks = mean(drinks),
+            upper = mean_drinks + sd(drinks),
+            lower = mean_drinks - sd(drinks)) %>% 
+  ggplot(aes(x = days, color = treatment)) +
+  geom_line(data = alc_dat_long, aes(x = days, y = drinks, group = sid), alpha = 0.2) +
+  geom_line(aes(y = mean_drinks, group = treatment)) + 
+  geom_errorbar(aes(ymin = lower, ymax = upper, group = treatment), width = 0.2) + 
+  geom_point(aes(y = mean_drinks)) +
+  ggthemes::theme_few() + ggthemes::scale_color_few() + facet_grid(~gender) + labs(y = "Drinks", x = "Days")
+```
+
+```{r message = FALSE, warning = FALSE, echo = FALSE, fig.cap = "Potential overdispersion in Poisson outcome"}
+alc_dat_long %>% 
+  group_by(gender, days, treatment) %>% 
+  summarize(mean = mean(drinks),
+            var = var(drinks),
+            scale = var/mean)  %>% 
+  ggplot(aes(x = mean, y = var, color = scale)) + geom_point() + geom_abline(intercept = 0, slope = 1) + geom_smooth(method = "lm", color = "grey", se = FALSE) + ggthemes::theme_few() + scale_x_continuous(limits = c(0, 200)) + scale_y_continuous(limits = c(0, 600))
+```
+
+```{r message = FALSE, warning = FALSE, echo = FALSE, fig.cap = "ACF with lagged measurements"}
+sat_mod <- glm(drinks ~ gender + treatment*days, family = "poisson", data = alc_dat_long) #super saturated model
+alc_dat_long %>% 
+  modelr::add_residuals(sat_mod) %>% 
+  dplyr::select(sid, days, treatment, gender, resid) %>% 
+  mutate(days = as.numeric(days)) %>% 
+  group_by(sid) %>% 
+  mutate(lag_1 = lag(resid, 1),
+         lag_2 = lag(resid, 2)) %>% 
+  ungroup() %>% group_by(gender, treatment) %>% 
+  summarize(cor_0 = cor(resid, resid, use = "pairwise.complete.obs"),
+            cor_1 = cor(resid, lag_1, use = "pairwise.complete.obs"),
+            cor_2 = cor(resid, lag_2, use = "pairwise.complete.obs")) %>% ungroup() %>% 
+  summarize(cor_0 = mean(cor_0), cor_1 = mean(cor_1), cor_2 = mean(cor_2)) %>% 
+  pivot_longer(c("cor_0", "cor_1", "cor_2"), names_to = "lag", values_to = "cor", names_prefix = "cor_") %>%
+  ggplot(aes(x = lag, y = cor)) +
+  geom_col(width = 0.1) + ggthemes::theme_few()
+
+```
+
+```{r message = FALSE, warning = FALSE, echo = FALSE}
+library(janitor)
+alc_dat_long %>% 
+  tabyl(treatment, relapse) %>% 
+  adorn_percentages("row") %>%
+  adorn_pct_formatting(digits = 2) %>%
+  adorn_ns() %>% 
+  knitr::kable(caption = "Contingency table of Relapse by Treatment")
+
+```
+
+\newpage
+
+```{r message = FALSE, warning = FALSE, echo = FALSE}
+alc_dat_grouped <- alc_dat %>% 
+  mutate(treatment = forcats::fct_relevel(treatment, "3")) %>% 
+  group_by(treatment, gender) %>% 
+  count(relapse) %>% 
+  pivot_wider(names_from = relapse, values_from = n, names_prefix = "relapse_")
+
+response_table = cbind(alc_dat_grouped$relapse_1, alc_dat_grouped$relapse_0)
+treatment <- alc_dat_grouped$treatment
+glm_relapse_ref <- glm(response_table ~ treatment , family = binomial) 
+
+broom::tidy(glm_relapse_ref, exponentiate = TRUE, conf.int = TRUE) %>% 
+    dplyr::select(term, estimate, std.error, conf.low, conf.high) %>% 
+  knitr::kable(caption = "Logistic Regression of Treatment on 6-month Relapse")
+
+```
+
+\newpage
+
+```{r message = FALSE, warning = FALSE, echo = FALSE}
+broom::tidy(pois_gee, exponentiate = TRUE, conf.int = TRUE) %>% 
+  dplyr::select(term, estimate, std.error, conf.low, conf.high) %>% 
+  knitr::kable(caption = "Ratio of expected counts from Poisson model (Exchangeable covariance)")
+
+```
+
+
